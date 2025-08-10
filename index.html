@@ -32,11 +32,6 @@
     text-align: center;
   }
 
-  input[type="file"] {
-    display: block;
-    margin: 30px auto 0 auto; /* top 30px margin, auto left/right for centering */
-  }
-
   .tooltip {
     position: absolute;
     background: rgba(0,0,0,0.8);
@@ -162,7 +157,7 @@
   <h2>2026 Gerrymandering Powergrab</h2>
   <svg id="map" width="960" height="600"></svg>
   <div id="tooltip" class="tooltip"></div>
-  <input type="file" id="csvFile" accept=".csv" />
+  <!-- Removed file input for automatic CSV load -->
 </div>
 
 <div id="sidebar">
@@ -228,10 +223,9 @@ function getColorByPickup(pickup, plan) {
   const lowerPlan = plan.trim().toLowerCase();
   if (lowerPlan === "yes") return "red";
   if (lowerPlan === "no") return "gray";
-  if (lowerPlan === "unclear") return "#df9a57";  // the yellow you want
+  if (lowerPlan === "unclear") return "#df9a57";  // yellow
   return "#ccc";
 }
-
 
 let dataMap = {};
 
@@ -266,48 +260,47 @@ d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us => {
         `);
     })
     .on("mouseleave", () => tooltip.style("opacity", 0));
+
+  // After topojson is loaded and states drawn, load your CSV data from GitHub
+  loadCsvData(csvUrl);
 });
 
-document.getElementById("csvFile").addEventListener("change", e => {
-  const file = e.target.files[0];
-  if (!file) return;
+const csvUrl = "https://raw.githubusercontent.com/jaysonfrascatore/GerrymanderingWars/main/data/Gerrymandering_Wars_8-10-2025.csv";
 
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
-    complete: results => {
-      const rows = results.data;
-      dataMap = {};
+function loadCsvData(url) {
+  d3.csv(url).then(rows => {
+    dataMap = {};
 
-      rows.forEach(row => {
-        const fullName = row["State"]?.trim();
-        if (!fullName) return;
-        const abbr = nameToAbbr[fullName];
-        if (!abbr) return;
+    rows.forEach(row => {
+      const fullName = row["State"]?.trim();
+      if (!fullName) return;
+      const abbr = nameToAbbr[fullName];
+      if (!abbr) return;
 
-        dataMap[abbr] = {
-          governorParty: row["Governor Party"],
-          republicanSeats: row["Republican Seats"],
-          democraticSeats: row["Democratic Seats"],
-          planToRedraw: row["Plan to Redraw"],
-          retaliateToState: row["Retaliate To State"],
-          partisanRedrawPickup: row["Partisan Redraw 2026 Pickup"]
-        };
+      dataMap[abbr] = {
+        governorParty: row["Governor Party"],
+        republicanSeats: row["Republican Seats"],
+        democraticSeats: row["Democratic Seats"],
+        planToRedraw: row["Plan to Redraw"],
+        retaliateToState: row["Retaliate To State"],
+        partisanRedrawPickup: row["Partisan Redraw 2026 Pickup"]
+      };
+    });
+
+    d3.selectAll("path.state")
+      .attr("fill", d => {
+        const abbr = fipsToStateAbbr(d.id);
+        const info = dataMap[abbr];
+        if (!info) return "#eee";
+        return getColorByPickup(info.partisanRedrawPickup, info.planToRedraw);
       });
 
-      d3.selectAll("path.state")
-        .attr("fill", d => {
-          const abbr = fipsToStateAbbr(d.id);
-          const info = dataMap[abbr];
-          if (!info) return "#eee";
-          return getColorByPickup(info.partisanRedrawPickup, info.planToRedraw);
-        });
-
-      updatePickupLabels();
-      updateGerrymanderSummary();
-    }
+    updatePickupLabels();
+    updateGerrymanderSummary();
+  }).catch(err => {
+    console.error("Failed to load CSV:", err);
   });
-});
+}
 
 function fipsToStateAbbr(fips) {
   const fipsMap = {
