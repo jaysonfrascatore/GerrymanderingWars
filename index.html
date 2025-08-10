@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Interactive US Map with Gerrymandering Advantage Sidebar</title>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
@@ -12,27 +13,36 @@
     margin: 20px;
     display: flex;
     gap: 20px;
+    flex-direction: column;
+    align-items: center;
   }
 
-#map {
-  border: 1px solid #ccc;
-  width: 100%;
-  max-width: 1200px; 
-  height: 720px; 
-  margin: 0 auto;         
-  display: block;
-}
+  #map {
+    border: 1px solid #ccc;
+    width: 100% !important;
+    max-width: 1200px; 
+    height: auto;
+    aspect-ratio: 16 / 10;
+    margin: 0 auto 24px;
+    display: block;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
 
   #sidebar {
-    width: 320px;
+    width: 100% !important;
+    max-width: 480px;
     display: flex;
     flex-direction: column;
     gap: 20px;
+    padding: 0 12px;
+    box-sizing: border-box;
   }
 
   h2 {
     margin-top: 0;
     text-align: center;
+    font-size: 1.6rem;
   }
 
   .tooltip {
@@ -52,30 +62,30 @@
 
   #summary {
     font-weight: 700;
-    font-size: 18px;
+    font-size: 1.1rem;
     color: #222;
-    min-height: 40px;
+    min-height: auto;
   }
 
   #evalBar {
     display: flex;
-    height: 40px;
+    height: 32px;
     background: #eee;
     border-radius: 8px;
     overflow: hidden;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
   }
 
-.segment {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;         /* ensures white text */
-  font-weight: 700;
-  font-size: 22px;      /* bumped from 16px to 22px */
-  transition: width 0.5s ease;
-  user-select: none;
-}
+  .segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+    transition: width 0.5s ease;
+    user-select: none;
+  }
 
   .red {
     background: #d33;
@@ -97,6 +107,9 @@
     align-items: center;
     user-select: none;
     flex-wrap: wrap;
+    justify-content: center;
+    font-size: 13px;
+    padding-bottom: 16px;
   }
 
   .legend-item {
@@ -119,13 +132,13 @@
     box-shadow: 0 0 5px rgba(0,0,0,0.2);
   }
 
-.pickup-label {
-  font-weight: bold;
-  font-size: 20px;        /* bigger text */
-  fill: white;            /* white text */
-  pointer-events: none;
-  text-shadow: 0 0 5px black; /* stronger shadow for contrast */
-}
+  .pickup-label {
+    font-weight: bold;
+    font-size: 16px;
+    fill: white;
+    pointer-events: none;
+    text-shadow: 0 0 5px black;
+  }
 
   svg .state {
     cursor: pointer;
@@ -136,7 +149,7 @@
 
   /* Highlight styles for seat lead text */
   .red-highlight {
-    background-color: #d32f2f; /* strong red */
+    background-color: #d32f2f;
     color: white;
     padding: 2px 6px;
     border-radius: 4px;
@@ -145,12 +158,39 @@
   }
 
   .blue-highlight {
-    background-color: #1976d2; /* strong blue */
+    background-color: #1976d2;
     color: white;
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: bold;
     margin-left: 4px;
+  }
+
+  /* Mobile tweaks */
+  @media (max-width: 600px) {
+    body {
+      margin: 8px 4px;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+    }
+
+    #evalBar {
+      height: 28px;
+    }
+
+    .segment {
+      font-size: 14px;
+    }
+
+    .pickup-label {
+      font-size: 14px;
+    }
+
+    #summary {
+      font-size: 1rem;
+    }
   }
 </style>
 </head>
@@ -160,7 +200,6 @@
   <h2>2026 Gerrymandering Wars</h2>
   <svg id="map" width="960" height="600"></svg>
   <div id="tooltip" class="tooltip"></div>
-  <!-- Removed file input for automatic CSV load -->
 </div>
 
 <div id="sidebar">
@@ -189,10 +228,6 @@
     </div>
   </div>
 </div>
-
-<script src="https://unpkg.com/topojson-client@3"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
-<script src="https://d3js.org/d3.v7.min.js"></script>
 
 <script>
 // Map setup
@@ -268,7 +303,7 @@ d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us => {
   loadCsvData(csvUrl);
 });
 
-const csvUrl = "https://raw.githubusercontent.com/jaysonfrascatore/GerrymanderingWars/main/data/Gerrymandering_Wars_8-10-2025.csv";
+const csvUrl = "https://raw.githubusercontent.com/jaysonfrascatore/GerrymanderingWars/main/data/Gerrymandering_Wars_8-10-2025_v2.csv";
 
 function loadCsvData(url) {
   d3.csv(url).then(rows => {
@@ -372,7 +407,6 @@ function updateGerrymanderSummary() {
   const blueSegment = evalBar.select(".blue");
 
   if (leadParty) {
-    // Highlight the seat lead with colored box
     const seatLeadText = `<span class="${leadParty === "Republicans" ? "red-highlight" : "blue-highlight"}">${leadSeats} Seat Lead</span>`;
     summaryDiv.html(`${leadParty} Plan to Gerrymander a ${seatLeadText} for 2026.`);
     
