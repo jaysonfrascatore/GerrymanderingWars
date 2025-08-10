@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Interactive US Map with Gerrymandering Advantage Sidebar</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+<script src="https://unpkg.com/topojson-client@3"></script>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    display: flex;
+    gap: 20px;
+  }
+
+  #map {
+    border: 1px solid #ccc;
+    flex: 1 1 0;
+    height: 600px;
+  }
+
+  #sidebar {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  h2 {
+    margin-top: 0;
+    text-align: center;
+  }
+
+  input[type="file"] {
+    display: block;
+    margin: 30px auto 0 auto; /* top 30px margin, auto left/right for centering */
+  }
+
+  .tooltip {
+    position: absolute;
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    pointer-events: none;
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    max-width: 300px;
+    line-height: 1.3;
+    z-index: 10;
+  }
+
+  #summary {
+    font-weight: 700;
+    font-size: 18px;
+    color: #222;
+    min-height: 40px;
+  }
+
+  #evalBar {
+    display: flex;
+    height: 40px;
+    background: #eee;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  }
+
+.segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;         /* ensures white text */
+  font-weight: 700;
+  font-size: 22px;      /* bumped from 16px to 22px */
+  transition: width 0.5s ease;
+  user-select: none;
+}
+
+  .red {
+    background: #d33;
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+  }
+
+  .blue {
+    background: #357edd;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+  }
+
+  #legend {
+    margin-top: 15px;
+    font-family: Arial, sans-serif;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    user-select: none;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: default;
+    transition: transform 0.2s ease;
+  }
+
+  .legend-item:hover {
+    transform: scale(1.1);
+  }
+
+  .color-box {
+    width: 22px;
+    height: 22px;
+    border: 2px solid #000;
+    border-radius: 4px;
+    box-shadow: 0 0 5px rgba(0,0,0,0.2);
+  }
+
+.pickup-label {
+  font-weight: bold;
+  font-size: 20px;        /* bigger text */
+  fill: white;            /* white text */
+  pointer-events: none;
+  text-shadow: 0 0 5px black; /* stronger shadow for contrast */
+}
+
+  svg .state {
+    cursor: pointer;
+    stroke: #fff;
+    stroke-width: 1;
+    transition: fill 0.3s;
+  }
+
+  /* Highlight styles for seat lead text */
+  .red-highlight {
+    background-color: #d32f2f; /* strong red */
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 4px;
+  }
+
+  .blue-highlight {
+    background-color: #1976d2; /* strong blue */
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div>
+  <h2>2026 Gerrymandering Powergrab</h2>
+  <svg id="map" width="960" height="600"></svg>
+  <div id="tooltip" class="tooltip"></div>
+  <input type="file" id="csvFile" accept=".csv" />
+</div>
+
+<div id="sidebar">
+  <div id="summary">See the current gerrymandering advantage.</div>
+  <div id="evalBar">
+    <div class="segment red" style="width: 50%;">R+0</div>
+    <div class="segment blue" style="width: 50%;">D+0</div>
+  </div>
+
+  <div id="legend">
+    <div class="legend-item" data-color="gray">
+      <div class="color-box" style="background: gray;"></div>
+      <span>No Current Plans</span>
+    </div>
+    <div class="legend-item" data-color="#df9a57">
+      <div class="color-box" style="background: #df9a57;"></div>
+      <span>Unclear</span>
+    </div>
+    <div class="legend-item" data-color="blue">
+      <div class="color-box" style="background: blue;"></div>
+      <span>Democratic Gerrymandering</span>
+    </div>
+    <div class="legend-item" data-color="red">
+      <div class="color-box" style="background: red;"></div>
+      <span>Republican Gerrymandering</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/topojson-client@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<script>
+// Map setup
+const width = 960;
+const height = 600;
+const svg = d3.select("#map");
+const projection = d3.geoAlbersUsa().translate([width / 2, height / 2]).scale(1300);
+const path = d3.geoPath().projection(projection);
+const tooltip = d3.select("#tooltip");
+
+const nameToAbbr = {
+  "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA", "Colorado": "CO",
+  "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
+  "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA",
+  "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
+  "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+  "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC",
+  "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA",
+  "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX",
+  "Utah": "UT", "Vermont": "VT", "Virginia": "VA", "Washington": "WA", "West Virginia": "WV",
+  "Wisconsin": "WI", "Wyoming": "WY", "District of Columbia": "DC"
+};
+
+function getColorByPickup(pickup, plan) {
+  if (pickup) {
+    const p = pickup.trim();
+    if (p.startsWith("R+")) return "red";
+    if (p.startsWith("D+")) return "blue";
+  }
+  if (!plan) return "#ccc";
+  const lowerPlan = plan.trim().toLowerCase();
+  if (lowerPlan === "yes") return "red";
+  if (lowerPlan === "no") return "gray";
+  if (lowerPlan === "unclear") return "#df9a57";  // the yellow you want
+  return "#ccc";
+}
+
+
+let dataMap = {};
+
+d3.json("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json").then(us => {
+  const states = topojson.feature(us, us.objects.states).features;
+
+  svg.selectAll("path")
+    .data(states)
+    .join("path")
+    .attr("class", "state")
+    .attr("d", path)
+    .attr("id", d => fipsToStateAbbr(d.id))
+    .attr("fill", "#eee")
+    .on("mousemove", (event, d) => {
+      const abbr = fipsToStateAbbr(d.id);
+      const info = dataMap[abbr];
+      if (!info) {
+        tooltip.style("opacity", 0);
+        return;
+      }
+      tooltip.style("opacity", 1)
+        .style("left", (event.pageX + 10) + "px")
+        .style("top", (event.pageY + 10) + "px")
+        .html(`
+          <strong>${abbr}</strong><br/>
+          Governor Party: ${info.governorParty || 'N/A'}<br/>
+          Republican Seats: ${info.republicanSeats || 'N/A'}<br/>
+          Democratic Seats: ${info.democraticSeats || 'N/A'}<br/>
+          Plan to Redraw: ${info.planToRedraw || 'N/A'}<br/>
+          Retaliate To State: ${info.retaliateToState || 'N/A'}<br/>
+          Partisan Redraw 2026 Pickup: ${info.partisanRedrawPickup || 'N/A'}
+        `);
+    })
+    .on("mouseleave", () => tooltip.style("opacity", 0));
+});
+
+document.getElementById("csvFile").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: results => {
+      const rows = results.data;
+      dataMap = {};
+
+      rows.forEach(row => {
+        const fullName = row["State"]?.trim();
+        if (!fullName) return;
+        const abbr = nameToAbbr[fullName];
+        if (!abbr) return;
+
+        dataMap[abbr] = {
+          governorParty: row["Governor Party"],
+          republicanSeats: row["Republican Seats"],
+          democraticSeats: row["Democratic Seats"],
+          planToRedraw: row["Plan to Redraw"],
+          retaliateToState: row["Retaliate To State"],
+          partisanRedrawPickup: row["Partisan Redraw 2026 Pickup"]
+        };
+      });
+
+      d3.selectAll("path.state")
+        .attr("fill", d => {
+          const abbr = fipsToStateAbbr(d.id);
+          const info = dataMap[abbr];
+          if (!info) return "#eee";
+          return getColorByPickup(info.partisanRedrawPickup, info.planToRedraw);
+        });
+
+      updatePickupLabels();
+      updateGerrymanderSummary();
+    }
+  });
+});
+
+function fipsToStateAbbr(fips) {
+  const fipsMap = {
+    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT", "10": "DE",
+    "11": "DC", "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN", "19": "IA",
+    "20": "KS", "21": "KY", "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN",
+    "28": "MS", "29": "MO", "30": "MT", "31": "NE", "32": "NV", "33": "NH", "34": "NJ", "35": "NM",
+    "36": "NY", "37": "NC", "38": "ND", "39": "OH", "40": "OK", "41": "OR", "42": "PA", "44": "RI",
+    "45": "SC", "46": "SD", "47": "TN", "48": "TX", "49": "UT", "50": "VT", "51": "VA", "53": "WA",
+    "54": "WV", "55": "WI", "56": "WY"
+  };
+  return fipsMap[fips.toString().padStart(2, "0")] || null;
+}
+
+function updatePickupLabels() {
+  svg.selectAll(".pickup-label").remove();
+
+  svg.selectAll("path.state")
+    .each(function(d) {
+      const abbr = fipsToStateAbbr(d.id);
+      const info = dataMap[abbr];
+      if (info && info.planToRedraw?.trim().toLowerCase() === "yes" && info.partisanRedrawPickup) {
+        const coords = path.centroid(d);
+        svg.append("text")
+          .attr("class", "pickup-label")
+          .attr("x", coords[0])
+          .attr("y", coords[1])
+          .attr("text-anchor", "middle")
+          .attr("alignment-baseline", "middle")
+          .text(info.partisanRedrawPickup);
+      }
+    });
+}
+
+function updateGerrymanderSummary() {
+  let rTotal = 0;
+  let dTotal = 0;
+
+  Object.values(dataMap).forEach(info => {
+    if (info.partisanRedrawPickup) {
+      const pickup = info.partisanRedrawPickup.trim();
+      const match = pickup.match(/^([RD])\+(\d+)$/);
+      if (match) {
+        const party = match[1];
+        const seats = parseInt(match[2], 10);
+        if (party === "R") rTotal += seats;
+        else if (party === "D") dTotal += seats;
+      }
+    }
+  });
+
+  let leadParty, leadSeats;
+  if (rTotal > dTotal) {
+    leadParty = "Republicans";
+    leadSeats = rTotal - dTotal;
+  } else if (dTotal > rTotal) {
+    leadParty = "Democrats";
+    leadSeats = dTotal - rTotal;
+  } else {
+    leadParty = null;
+  }
+
+  const summaryDiv = d3.select("#summary");
+  const evalBar = d3.select("#evalBar");
+  const redSegment = evalBar.select(".red");
+  const blueSegment = evalBar.select(".blue");
+
+  if (leadParty) {
+    // Highlight the seat lead with colored box
+    const seatLeadText = `<span class="${leadParty === "Republicans" ? "red-highlight" : "blue-highlight"}">${leadSeats} Seat Lead</span>`;
+    summaryDiv.html(`${leadParty} Plan to Gerrymander a ${seatLeadText} for 2026.`);
+    
+    const total = rTotal + dTotal;
+    const redPercent = total === 0 ? 50 : (rTotal / total) * 100;
+    const bluePercent = total === 0 ? 50 : (dTotal / total) * 100;
+
+    redSegment.style("width", redPercent + "%").text(`R+${rTotal}`);
+    blueSegment.style("width", bluePercent + "%").text(`D+${dTotal}`);
+  } else {
+    summaryDiv.text("No Gerrymandered Seat Lead detected for 2026.");
+    redSegment.style("width", "50%").text("R+0");
+    blueSegment.style("width", "50%").text("D+0");
+  }
+}
+</script>
+
+</body>
+</html>
