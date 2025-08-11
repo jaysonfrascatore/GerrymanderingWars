@@ -79,6 +79,7 @@
     justify-content: center;
     align-items: center;
     transition: width 0.5s ease;
+    min-width: 40px;
   }
   #evalBar .segment.blue {
     background-color: var(--accent-blue);
@@ -86,6 +87,7 @@
     justify-content: center;
     align-items: center;
     transition: width 0.5s ease;
+    min-width: 40px;
   }
 
   /* Seat lead pill with white text and background color */
@@ -423,54 +425,52 @@ function updateGerrymanderSummary() {
   let dTotal = 0;
 
   Object.values(dataMap).forEach(info => {
-    if (!info.partisanRedrawPickup) return;
-    const pickup = info.partisanRedrawPickup.trim();
-    if (pickup.startsWith("R+")) {
-      const val = parseInt(pickup.slice(2)) || 0;
-      rTotal += val;
-    } else if (pickup.startsWith("D+")) {
-      const val = parseInt(pickup.slice(2)) || 0;
-      dTotal += val;
+    const pickup = info.partisanRedrawPickup?.trim();
+    if (pickup) {
+      if (pickup.startsWith("R+")) {
+        rTotal += Number(pickup.substring(2)) || 0;
+      } else if (pickup.startsWith("D+")) {
+        dTotal += Number(pickup.substring(2)) || 0;
+      }
     }
   });
 
-  const evalBar = d3.select("#evalBar");
   const bannerText = d3.select("#bannerText");
   const bannerLead = d3.select("#bannerLead");
 
-  const total = rTotal + dTotal;
-
-  if (total === 0) {
-    evalBar.selectAll(".segment")
-      .style("width", "50%")
-      .text("R+0");
-    bannerText.text("No Gerrymandered Seat Lead detected for 2026.");
-    bannerLead.html("");
-    return;
-  }
-
-  const rPercent = (rTotal / total) * 100;
-  const dPercent = (dTotal / total) * 100;
-
-  evalBar.select(".segment.red")
-    .style("width", rPercent + "%")
-    .text(`R+${rTotal}`);
-
-  evalBar.select(".segment.blue")
-    .style("width", dPercent + "%")
-    .text(`D+${dTotal}`);
-
-  bannerText.text(`Gerrymandered Seat Lead detected for 2026.`);
-
-  if (rTotal > dTotal) {
-    bannerLead.html(`<span class="Seat-Lead r">Republican Lead +${rTotal}</span>`);
-  } else if (dTotal > rTotal) {
-    bannerLead.html(`<span class="Seat-Lead d">Democratic Lead +${dTotal}</span>`);
+  if (rTotal === 0 && dTotal === 0) {
+    bannerText.text("No Gerrymandered Seat Lead detected in 2026.");
+    bannerLead.html("");  // Clear it just in case
   } else {
-    bannerLead.html("");
+    const netLead = rTotal - dTotal;
+
+    if (netLead > 0) {
+      bannerText.html(`  
+        <span class="Seat-Lead r">Republicans</span> Currently Plan to Gerrymander a <span class="Seat-Lead r">${netLead} Seat Lead</span> Over <span class="Seat-Lead d">Democrats</span> in 2026.
+      `);
+    } else if (netLead < 0) {
+      bannerText.html(`
+        <span class="Seat-Lead d">Democrats</span> Currently Plan to Gerrymander a <span class="Seat-Lead d">${Math.abs(netLead)} Seat Lead</span> Over <span class="Seat-Lead r">Republicans</span> in 2026.
+      `);
+    } else {
+      bannerText.html("No Gerrymandered Seat Lead detected in 2026.");
+    }
+
+    // REMOVE the bannerLead update so no redundant lead pill:
+    bannerLead.html("");  // Just clear it so nothing shows up
   }
+
+  // Update evaluation bar dynamically (unchanged)
+  const evalBar = d3.select("#evalBar");
+  const totalPickups = rTotal + dTotal;
+  const rPercent = totalPickups ? (rTotal / totalPickups) * 100 : 50;
+  const dPercent = totalPickups ? (dTotal / totalPickups) * 100 : 50;
+
+  evalBar.html(`
+    <div class="segment red" style="width: ${rPercent}%; min-width: 40px;">R+${rTotal}</div>
+    <div class="segment blue" style="width: ${dPercent}%; min-width: 40px;">D+${dTotal}</div>
+  `);
 }
 </script>
-
 </body>
 </html>
